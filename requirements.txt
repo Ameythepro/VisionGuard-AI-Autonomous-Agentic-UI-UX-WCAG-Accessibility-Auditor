@@ -1,0 +1,13 @@
+fastapi
+uvicorn
+playwright
+beautifulsoup4
+tinycss2
+numpy
+streamlit
+streamlit-image-comparison
+crewai
+langchain-google-genai
+redis
+celery
+python-dotenv
