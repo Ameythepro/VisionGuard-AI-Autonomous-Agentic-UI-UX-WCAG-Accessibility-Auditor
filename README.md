@@ -6,7 +6,7 @@
 ![Streamlit](https://img.shields.io/badge/Streamlit-1.26.0-FF4B4B.svg)
 ![Playwright](https://img.shields.io/badge/Playwright-1.38.0-2EAD33.svg)
 
-> **Academic Project:** 5th Semester CSE Evaluation | Indian Institute of Information Technology (IIIT), Kottayam
+
 
 ---
 
