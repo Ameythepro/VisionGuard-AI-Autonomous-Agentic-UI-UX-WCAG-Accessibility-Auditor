@@ -1,1 +1,47 @@
-# docker-compose.yml for VisionGuard AI
+# ====================================
+# VisionGuard AI - Docker Compose
+# ====================================
+# Orchestrates the API backend + Redis cache
+
+version: "3.9"
+
+services:
+  # --- VisionGuard API Server ---
+  visionguard-api:
+    build: .
+    container_name: visionguard-api
+    ports:
+      - "8000:8000"
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_DB=0
+      - CACHE_TTL_SECONDS=3600
+      - PLAYWRIGHT_HEADLESS=true
+    env_file:
+      - .env
+    depends_on:
+      redis:
+        condition: service_healthy
+    volumes:
+      - screenshot_data:/app/temp_screenshots
+    restart: unless-stopped
+
+  # --- Redis Cache ---
+  redis:
+    image: redis:7-alpine
+    container_name: visionguard-redis
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+
+volumes:
+  screenshot_data:
+  redis_data:
