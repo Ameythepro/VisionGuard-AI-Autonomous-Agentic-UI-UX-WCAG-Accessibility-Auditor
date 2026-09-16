@@ -14,3 +14,4 @@ pydantic
 redis
 celery
 python-dotenv
+pytest>=7.0.0
