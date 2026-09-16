@@ -1,191 +1,203 @@
 # VisionGuard AI — Full Progress Report
 
-> **Date:** September 11, 2026  
+> **Date:** September 17, 2026  
 > **Project:** VisionGuard AI — Autonomous Agentic UI/UX & WCAG Accessibility Auditor  
 > **Repo:** [github.com/Ameythepro/VisionGuard-AI-Autonomous-Agentic-UI-UX-WCAG-Accessibility-Auditor](https://github.com/Ameythepro/VisionGuard-AI-Autonomous-Agentic-UI-UX-WCAG-Accessibility-Auditor)
 
 ---
 
-## 📊 Overall Project Completion: 65%
+## 📊 Overall Project Completion: ~85%
 
-| Phase | Description | Status | Completion |
+| Phase | Description | Owner | Status | Completion |
+|---|---|---|---|---|
+| Phase 1 | Foundation (Browser + API) | Nipun | ✅ Done | 100% |
+| Phase 2 | Accessibility Logic (DOM + WCAG Math) | Friend (Amey) | ✅ Done | 100% |
+| Phase 3 | AI Brain (LLM + Reflection Loop) | Nipun | ✅ Done | 100% |
+| Phase 4 | Frontend UI Dashboard | Friend | 🚧 Scaffolded | 70% |
+
+> **Why 85%?** Phases 1, 2, and 3 are 100% complete (the entire backend pipeline works end-to-end). Phase 4 (Frontend) is scaffolded with all pages and components, but needs final integration testing and polish.
+
+---
+
+## 📈 Codebase Statistics
+
+| Module | Lines of Code | Files |
+|---|---|---|
+| `ai_engine/` | **1,591 lines** | 4 files |
+| `dom_accessibility/` | **2,022 lines** | 4 files |
+| `browser_automation/` | **600 lines** | 4 files |
+| `api_backend/` | **647 lines** | 3 files |
+| `frontend_ui/` | **2,333 lines** | 20+ files |
+| `tests/` | **729 lines** | 1 file |
+| **Total** | **~7,922 lines** | **36+ files** |
+
+---
+
+## 🔍 Detailed Breakdown of EVERYTHING Implemented
+
+---
+
+### Phase 1: Foundation — Browser Engine + API Gateway (✅ 100%)
+*Built by: Nipun*
+
+#### `browser_automation/viewport_manager.py` (130 lines)
+**Purpose:** Multi-device viewport simulation for responsive testing.
+- 7 real-device viewport presets as frozen `@dataclass` objects (Desktop 1080p, Desktop 720p, Tablet Landscape/Portrait, Mobile Large/Standard/Small)
+- Each stores `width`, `height`, `device_scale_factor`, `is_mobile`, `has_touch`
+- `to_playwright_context_options()` converts configs directly to Playwright's browser context API format
+- `get_default_audit_viewports()` returns the 3 critical breakpoints (Desktop + Tablet + Mobile)
+
+#### `browser_automation/browser_engine.py` (267 lines)
+**Purpose:** The "eyes" of the system — captures visual and structural data from any webpage.
+- `capture_page(url)` → Launches headless Chromium, loops through 3 viewports, waits for network idle + 1.5s settle, captures full-page screenshots, extracts rendered HTML
+- `extract_computed_styles(url)` → Injects JavaScript inside the browser to query every text element's **final rendered** `color`, `background-color`, `font-size`, `font-weight`, bounding box, and CSS selector
+- Returns structured `AuditCapture` and `PageCapture` dataclass objects
+
+#### `browser_automation/sandbox_injector.py` (183 lines)
+**Purpose:** Closed-loop CSS patch verification sandbox.
+- `apply_and_verify(url, css_patch)` → Loads page in clean context, captures "before" screenshot, injects CSS via `<style data-visionguard>` tag, captures "after" screenshot
+- Returns `SandboxResult` with both screenshots for AI to compare
+
+#### `api_backend/main_api.py` (478 lines)
+**Purpose:** FastAPI HTTP gateway — the central API that all clients talk to.
+- `GET /health` → Returns API status, version, Redis connectivity
+- `POST /audit-url` → Full pipeline: BrowserEngine capture → WCAG check → cache result → return
+- `GET /audit/{audit_id}` → Retrieve previously completed audit by ID
+- `POST /sandbox/verify-patch` → Test a CSS patch in the sandbox
+- Pydantic models for type-safe request/response validation
+- CORS middleware enabled for frontend cross-origin calls
+
+#### `api_backend/redis_cache.py` (160 lines)
+**Purpose:** Caches audit results to avoid redundant 5-10s Playwright runs.
+- Lazy Redis connection (only connects on first use)
+- Graceful degradation (if Redis is down, pipeline runs directly — no crash)
+- SHA-256 URL hashing for cache keys, configurable TTL via `.env`
+
+#### Infrastructure
+- **`Dockerfile`** (49 lines): Python 3.10 slim + Playwright system deps + Chromium browser binary
+- **`docker-compose.yml`** (47 lines): 2-service stack (API + Redis) with health checks and named volumes
+- **`.env`**: All environment variables templated (API, Redis, Playwright, API keys)
+
+---
+
+### Phase 2: Accessibility Logic — DOM + WCAG Math Engine (✅ 100%)
+*Built by: Friend (Amey) on `feature-accessibility` branch*
+
+#### `dom_accessibility/wcag_checker.py` (857 lines)
+**Purpose:** The deterministic "Symbolic" half of the Neuro-Symbolic architecture. Zero AI — pure math from the W3C spec.
+- **CSS Color Parsing:** Handles `#hex`, `#shorthand`, `rgb()`, `rgba()`, `hsl()`, `hsla()`, and 148 W3C named colors
+- **sRGB Linearization:** `linearize_srgb_channel()` — the exact W3C formula
+- **Relative Luminance:** `L = 0.2126R + 0.7152G + 0.0722B` per W3C definition
+- **Contrast Ratio:** `(L1 + 0.05) / (L2 + 0.05)` where L1 >= L2
+- **WCAG Compliance:** AA (4.5:1 normal, 3:1 large) and AAA (7:1 normal, 4.5:1 large) with `is_large_text()` detection
+- **Color Blindness Simulation:** Protanopia, Deuteranopia, Tritanopia using Brettel/Vienot matrices via `numpy`
+- **Auto-Fix Suggestions:** `suggest_fix_color()` — algorithmically adjusts foreground to meet minimum contrast ratio
+
+#### `dom_accessibility/dom_parser.py` (521 lines)
+**Purpose:** Structural HTML accessibility checker — catches violations invisible to visual inspection.
+- Checks: `img-alt`, `link-text`, `form-label`, `heading-order`, `page-lang`, `page-title`, `landmark-regions`
+- References WCAG 2.1 criteria: 1.1.1, 1.3.1, 2.4.1, 2.4.2, 3.1.1, 4.1.2
+- Returns structured `DOMAnalysisResult` with severity, element HTML, description, and fix suggestion
+
+#### `dom_accessibility/ast_extractor.py` (586 lines)
+**Purpose:** CSS Abstract Syntax Tree parser + unified diagnostic builder.
+- Uses `tinycss2` to parse CSS into structured ASTs
+- `validate_css()` — catches syntax errors in AI-generated patches before injection
+- `build_unified_diagnostic()` — combines DOM violations + WCAG contrast results into single JSON
+
+#### `tests/test_wcag_math.py` (729 lines)
+**Purpose:** Comprehensive unit tests ensuring 100% mathematical accuracy.
+- Tests for color parsing, sRGB linearization, luminance, contrast ratios, WCAG compliance
+- Tests for color blindness simulation, DOM parser, CSS validation
+- Run: `python -m pytest tests/test_wcag_math.py -v`
+
+---
+
+### Phase 3: AI Brain — LLM Orchestration + Reflection Loop (✅ 100%)
+*Built by: Nipun on `feature-ai-agent` branch*
+
+#### `ai_engine/agent_engine.py` (910 lines)
+**Purpose:** The core AI orchestrator — the "brain" of VisionGuard.
+- **Dual-Mode:** AI-Enhanced (Gemini multimodal) or Deterministic (math-only)
+- **Pipeline:** Capture → WCAG Check → DOM Parse → Unified Diagnostic → Gemini Analysis → CSS Patch → Reflection Loop
+- **CSS Patch Generator:** Generates targeted fixes per violation type
+
+#### `ai_engine/reflection_loop.py` (434 lines)
+**Purpose:** Closed-loop verification — ensures AI fixes actually work.
+- Retry logic: Propose patch → Sandbox test → Compare before/after → Approve or retry (max 3)
+- Verification: Re-runs WCAG math on patched page + pixel diff + optional Gemini visual confirmation
+- Generates final `ReflectionReport` with all attempts and pass/fail
+
+#### `ai_engine/prompt_templates.py` (170 lines)
+**Purpose:** Structured system prompts for Gemini multimodal analysis.
+- UI/UX Reviewer, CSS Fix Generator, and Reflection Verifier personas
+- Few-shot examples of CSS patches for common violations
+
+---
+
+### Phase 4: Frontend UI Dashboard (🚧 70%)
+*Built by: Friend on `main` branch — React + TypeScript + Vite*
+
+#### Architecture
+- React 18 + TypeScript + Vite + Tailwind CSS + TanStack React Query + React Router + Sonner
+
+#### Pages (3 pages)
+- **`AuditPage.tsx`** (214 lines): URL input → audit → stat cards + tabbed results
+- **`PatchLabPage.tsx`** (188 lines): CSS sandbox — enter URL + CSS → before/after screenshots
+- **`WcagGuidePage.tsx`** (236 lines): Searchable WCAG 2.1 reference guide
+
+#### Components (11 components)
+- Layout: `Layout.tsx`, `Sidebar.tsx`
+- Audit: `ResultTabs.tsx`, `StatCard.tsx`, `StylesTable.tsx`, `ViolationList.tsx`
+- UI: `Badge.tsx`, `Button.tsx`, `Input.tsx`, `Skeleton.tsx`, `States.tsx`
+
+#### API Client (`lib/api.ts`)
+- Type-safe client matching FastAPI response models
+
+---
+
+## ❓ What Remains (to reach 100%)
+
+| Task | Owner | Effort | Priority |
 |---|---|---|---|
-| Phase 1 | Foundation (Browser + API) | ✅ Done | 100% |
-| Phase 2 | Accessibility Logic (DOM + WCAG Math) | 🚧 In Progress | 70% |
-| Phase 3 | AI Brain (LLM + Reflection Loop) | 🚧 In Progress | 90% |
-| Phase 4 | UI Dashboard + Integration | 🔲 Not Started | 0% |
-
-Phase 1 (Foundation) is 100% complete. Phases 2 and 3 are currently in heavy development, pushing total project completion to 65%.
-
-### 🌟 Recent GitHub Activity
-- **9 Commits Pushed:** All Phase 1 files were committed individually to maximize activity metrics.
-- **Branches Synced:** All 4 feature branches (`feature-accessibility`, `feature-ai-agent`, `feature-automation`, `feature-backend-ui`) have been synced to `main`. **Everyone starts with the complete Phase 1 codebase.**
+| Frontend integration testing with live API | Friend 3 | Medium | High |
+| End-to-end test: UI → API → Browser → WCAG → AI → Sandbox → UI | Everyone | Medium | High |
+| `tests/test_playwright.py` — browser engine unit tests | Friend 1 | Medium | Medium |
+| Docker multi-stage build optimization | Friend 1 | Low | Low |
+| Final README updates with screenshots | Everyone | Low | Low |
 
 ---
 
-## 🔍 Detailed Breakdown of Everything Implemented
-
-### 1. Project Scaffolding (Complete)
-
-The entire microservices directory structure was created from scratch:
+## 🔗 Data Flow (Full Pipeline)
 
 ```
-VisionGuard-AI Project/
-├── .env                          ← Environment variables
-├── .gitignore                    ← Python/project ignore rules
-├── requirements.txt              ← 13 Python dependencies
-├── Dockerfile                    ← Production container build
-├── docker-compose.yml            ← Multi-service orchestration
-├── README.md                     ← Full project documentation
-│
-├── ai_engine/                    ← YOUR branch (Phase 3)
-│   ├── __init__.py
-│   ├── agent_engine.py           ← Placeholder (your work)
-│   ├── prompt_templates.py       ← Placeholder (your work)
-│   └── reflection_loop.py        ← Placeholder (your work)
-│
-├── browser_automation/           ← ✅ FULLY IMPLEMENTED (Base Engine)
-│   ├── __init__.py               ← Module exports
-│   ├── browser_engine.py         ← Playwright browser engine
-│   ├── viewport_manager.py       ← Device viewport configurations
-│   └── sandbox_injector.py       ← CSS patch verification
-│
-├── dom_accessibility/            ← Friend 2's branch (Phase 2)
-│   ├── __init__.py
-│   ├── dom_parser.py             ← Placeholder
-│   ├── wcag_checker.py           ← Placeholder
-│   └── ast_extractor.py          ← Placeholder
-│
-├── api_backend/                  ← ✅ FULLY IMPLEMENTED
-│   ├── __init__.py               ← Module exports
-│   ├── main_api.py               ← FastAPI server (4 endpoints)
-│   └── redis_cache.py            ← Redis caching layer
-│
-├── frontend_ui/                  ← Friend 3's branch (Phase 4)
-│   ├── __init__.py
-│   └── app_dashboard.py          ← Placeholder
-│
-└── tests/                        ← Friend 1's branch
-    ├── test_playwright.py        ← Placeholder
-    └── test_wcag_math.py         ← Placeholder
-```
-
----
-
-### 2. `browser_automation/viewport_manager.py`
-**What it does:** Defines 7 standardized screen resolutions (Desktop, Tablet, Mobile) as frozen `ViewportConfig` dataclasses for multi-device testing.
-
-### 3. `browser_automation/browser_engine.py`
-**What it does:** Opens a real headless Chromium browser, loops through viewports, captures screenshots, and runs JS to extract the computed colors and font sizes of every text element.
-
-### 4. `browser_automation/sandbox_injector.py`
-**What it does:** The closed-loop verification system. Injects AI-generated CSS patches via `<style>` tags into a clean browser context and captures "before" and "after" screenshots.
-
-### 5. `api_backend/main_api.py`
-**What it does:** The central HTTP API with endpoints for `/audit-url` and `/sandbox/verify-patch`. Orchestrates the Playwright engine and formats the responses.
-
-### 6. `api_backend/redis_cache.py`
-**What it does:** Caches audit results so repeated requests are instant. Gracefully degrades if Redis is offline.
-
-### 7. Infrastructure Files
-- **`Dockerfile`:** Python 3.10 slim base with Playwright Chromium dependencies.
-- **`docker-compose.yml`:** Orchestrates the FastAPI app and Redis container.
-
----
-
-## 👥 Team Collaboration Guide
-
-### Your 4-Branch Strategy
-
-| Branch | Owner | Works On | Status |
-|---|---|---|---|
-| `feature-ai-agent` | **You (Nipun)** | `ai_engine/` | Phase 3 — 🚧 90% Complete |
-| `feature-automation` | Friend 1 | `browser_automation/` + `tests/` | Base Engine Done, Advanced features next |
-| `feature-accessibility` | Friend 2 | `dom_accessibility/` | Phase 2 — 🚧 70% Complete |
-| `feature-backend-ui` | Friend 3 | `api_backend/` + `frontend_ui/` | Phase 1 API done, Phase 4 UI not started |
-
----
-
-### 🚀 How Friends Will Update Their Work Using Antigravity
-
-Since your friends will also be using Antigravity IDE on their own laptops, the workflow is incredibly simple. They barely need to touch the terminal!
-
-#### Step 1: Initial Setup (Once)
-1. They open their terminal and clone the repo:
-   ```bash
-   git clone https://github.com/Ameythepro/VisionGuard-AI-Autonomous-Agentic-UI-UX-WCAG-Accessibility-Auditor.git
-   ```
-2. They open the folder in Antigravity IDE.
-3. They tell Antigravity: **"Please switch me to my branch `feature-accessibility` (or whichever is theirs) and install the requirements from `requirements.txt`."**
-
-#### Step 2: Building the Code
-They just talk to Antigravity. For example, Friend 2 says:
-*"Implement the WCAG contrast calculator in `dom_accessibility/wcag_checker.py`. Use the computed styles from the browser engine to calculate relative luminance."*
-
-#### Step 3: Pushing to GitHub via Antigravity
-When they are done for the day, they don't need to type `git add` or `git commit`. They just tell Antigravity:
-> **"Please commit all my changes with a good commit message and push them to my branch on GitHub."**
-
-Antigravity will automatically:
-1. Run `git add .`
-2. Run `git commit -m "feat: added WCAG checker logic"`
-3. Run `git push origin <their-branch-name>`
-
-#### Step 4: Creating a Pull Request
-Once Antigravity has pushed the code, the friend goes to the GitHub repository in their web browser. 
-They will see a green button that says **"Compare & pull request"**. They click that, and you (Nipun) can merge it into `main`!
-
----
-
-## 🎯 What Each Person Should Build Next
-
-### Friend 1 — `feature-automation` → `browser_automation/` & `tests/`
-*(Note: The core Playwright engine was completed in Phase 1, but there are advanced features needed!)*
-- **`tests/test_playwright.py`**: Write `pytest` scripts to verify the `BrowserEngine` correctly handles network timeouts, captures all 3 viewports, and extracts the correct CSS styles.
-- **`browser_automation/browser_engine.py`**: Enhance the engine to support **authentication/login**. Many UI bugs happen behind a login screen. Add a way to pass cookies or run a login script before capturing screenshots.
-- **Docker Optimization**: The current Playwright Docker image is quite large. Try implementing a multi-stage Docker build in the `Dockerfile` to reduce image size and improve API startup times.
-
-### You (Nipun) — `feature-ai-agent` → `ai_engine/`
-- **`agent_engine.py`**: Initialize Gemini. Create an agent that calls the BrowserEngine and SandboxInjector tools.
-- **`prompt_templates.py`**: Define system prompts for the "UI/UX Reviewer".
-- **`reflection_loop.py`**: Build the retry loop (Agent proposes patch → Sandbox verifies → Agent approves).
-
-### Friend 2 — `feature-accessibility` → `dom_accessibility/`
-- **`dom_parser.py`**: Use `beautifulsoup4` to parse HTML.
-- **`wcag_checker.py`**: Implement WCAG contrast math `(L1 + 0.05) / (L2 + 0.05)`.
-- **`ast_extractor.py`**: Parse CSS ASTs.
-
-### Friend 3 — `feature-backend-ui` → `frontend_ui/`
-- **`app_dashboard.py`**: Build a Streamlit dashboard that calls the FastAPI endpoints and displays the interactive before/after image sliders.
-
----
-
-## 🔗 Quick Reference: Key Data Contracts
-
-**`BrowserEngine.extract_computed_styles()` returns:**
-```python
-[
-    {
-        "tag": "p",
-        "text": "Welcome",
-        "color": "rgb(128, 128, 128)",
-        "backgroundColor": "rgb(255, 255, 255)",
-        "fontSize": "16px",
-        "fontWeight": "400",
-        "boundingBox": {"x": 100, "y": 200, "width": 500, "height": 24},
-        "selector": "p.intro-text"
-    }
-]
-```
-
-**`SandboxInjector.apply_and_verify()` returns:**
-```python
-SandboxResult(
-    original_screenshot="temp_screenshots/sandbox/before.png",
-    patched_screenshot="temp_screenshots/sandbox/after.png",
-    css_patch="p.intro-text { color: #333333; }",
-    viewport_name="desktop_1080p",
-    success=True,
-    error=None
-)
+User enters URL in React UI (AuditPage)
+    ↓
+React calls POST /audit-url (api.ts → FastAPI)
+    ↓
+FastAPI checks Redis cache
+    ↓ (cache miss)
+BrowserEngine.capture_page() → Headless Chromium
+    → 3 viewports → 3 screenshots → Rendered HTML
+    ↓
+BrowserEngine.extract_computed_styles()
+    → JS injection → color, bg-color, font-size, bbox per element
+    ↓
+WCAGChecker.audit_computed_styles()
+    → Contrast ratios → AA/AAA pass/fail → Color blindness sim
+    ↓
+DOMParser.analyze()
+    → Missing alt, broken headings, missing labels
+    ↓
+ASTExtractor.build_unified_diagnostic()
+    → Combined JSON report
+    ↓
+AgentEngine.run_full_audit()
+    → Gemini multimodal analysis (if API key) → CSS patches
+    ↓
+ReflectionLoop.verify_patches()
+    → Sandbox test → Before/after comparison → Max 3 retries
+    ↓
+Final report returned to React UI
+    → StatCards, ViolationList, StylesTable, Screenshots
 ```
