@@ -1,11 +1,9 @@
 """
 VisionGuard AI - Browser Engine
 ================================
-Asynchronous Playwright-based headless browser engine.
-Captures multi-viewport screenshots, extracts full DOM/HTML source,
-and collects computed CSS styles from live web pages.
-
-This is the primary data-acquisition layer of the VisionGuard pipeline.
+Asynchronous Playwright-based headless browser engine. Captures multi-viewport 
+screenshots, extracts full DOM/HTML source, and collects computed CSS styles.
+Now features Authentication support via cookies and storage_state.
 """
 
 import asyncio
@@ -14,15 +12,13 @@ import logging
 import os
 import time
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Union
 
 from playwright.async_api import async_playwright, Page, Browser, BrowserContext
-
 from .viewport_manager import ViewportManager, ViewportConfig
 
 # Module-level logger
 logger = logging.getLogger("visionguard.browser_engine")
-
 
 @dataclass
 class PageCapture:
@@ -39,7 +35,6 @@ class PageCapture:
     page_url: str
     timestamp: float = field(default_factory=time.time)
 
-
 @dataclass
 class AuditCapture:
     """
@@ -51,13 +46,13 @@ class AuditCapture:
     errors: Dict[str, str] = field(default_factory=dict)
     duration_seconds: float = 0.0
 
-
 class BrowserEngine:
     """
     Headless browser automation engine using Playwright.
     
     Responsibilities:
     - Launch a headless Chromium instance
+    - Handle authenticated sessions via cookies or storage_state
     - Navigate to target URLs with configurable wait strategies
     - Capture full-page screenshots at multiple viewport sizes
     - Extract the full HTML source (DOM) of the rendered page
@@ -78,6 +73,8 @@ class BrowserEngine:
         url: str,
         output_dir: str = "temp_screenshots",
         viewports: Optional[Dict[str, ViewportConfig]] = None,
+        cookies: Optional[List[dict]] = None,
+        storage_state: Optional[Union[dict, str]] = None,
     ) -> AuditCapture:
         """
         Main entry point. Navigates to the URL and captures screenshots +
@@ -86,22 +83,23 @@ class BrowserEngine:
         Args:
             url: The target URL to audit.
             output_dir: Directory where screenshots will be saved.
-            viewports: Optional dict of viewport configs. Defaults to the
-                       standard 3-breakpoint audit set.
-        
+            viewports: Optional dict of viewport configs. Defaults to standard 3-breakpoint.
+            cookies: Optional list of cookie dictionaries to inject for authentication.
+            storage_state: Optional Playwright storage state (dict or filepath) for auth.
+            
         Returns:
             An AuditCapture object containing all per-viewport results.
         """
         if viewports is None:
             viewports = ViewportManager.get_default_audit_viewports()
-        
+            
         os.makedirs(output_dir, exist_ok=True)
         audit = AuditCapture(url=url, output_dir=output_dir)
         start_time = time.time()
-
+        
         logger.info(f"Starting audit capture for: {url}")
         logger.info(f"Viewports: {list(viewports.keys())}")
-
+        
         async with async_playwright() as pw:
             browser = await pw.chromium.launch(headless=self.headless)
             
@@ -109,17 +107,17 @@ class BrowserEngine:
                 for vp_name, vp_config in viewports.items():
                     try:
                         capture = await self._capture_single_viewport(
-                            browser, url, vp_name, vp_config, output_dir
+                            browser, url, vp_name, vp_config, output_dir, cookies, storage_state
                         )
                         audit.captures[vp_name] = capture
-                        logger.info(f"  ✅ {vp_name} ({vp_config.width}x{vp_config.height}) captured")
+                        logger.info(f"    {vp_name} ({vp_config.width}x{vp_config.height}) captured")
                     except Exception as e:
                         error_msg = f"{type(e).__name__}: {e}"
                         audit.errors[vp_name] = error_msg
-                        logger.error(f"  ❌ {vp_name} failed: {error_msg}")
+                        logger.error(f"    {vp_name} failed: {error_msg}")
             finally:
                 await browser.close()
-
+                
         audit.duration_seconds = round(time.time() - start_time, 2)
         logger.info(
             f"Audit capture complete. "
@@ -135,13 +133,25 @@ class BrowserEngine:
         viewport_name: str,
         viewport_config: ViewportConfig,
         output_dir: str,
+        cookies: Optional[List[dict]] = None,
+        storage_state: Optional[Union[dict, str]] = None,
     ) -> PageCapture:
         """
         Captures a single viewport: navigates, waits, screenshots, extracts DOM.
         Each viewport gets its own isolated BrowserContext for clean state.
         """
         context_options = ViewportManager.to_playwright_context_options(viewport_config)
+        
+        # Inject authentication state if provided
+        if storage_state:
+            context_options["storage_state"] = storage_state
+            
         context: BrowserContext = await browser.new_context(**context_options)
+        
+        # Inject manual cookies if provided
+        if cookies:
+            await context.add_cookies(cookies)
+            
         page: Page = await context.new_page()
         
         try:
@@ -164,7 +174,7 @@ class BrowserEngine:
             
             # --- Page metadata ---
             page_title = await page.title()
-
+            
             return PageCapture(
                 viewport_name=viewport_name,
                 viewport_width=viewport_config.width,
@@ -177,21 +187,28 @@ class BrowserEngine:
         finally:
             await context.close()
 
-    async def extract_computed_styles(self, url: str) -> List[dict]:
+    async def extract_computed_styles(
+        self, 
+        url: str,
+        cookies: Optional[List[dict]] = None,
+        storage_state: Optional[Union[dict, str]] = None,
+    ) -> List[dict]:
         """
         Navigates to a URL on a desktop viewport and extracts the computed
-        CSS styles of all visible text elements. This data is used by the
-        WCAG checker to compute color contrast ratios.
-        
-        Returns:
-            List of dicts, each containing element tag, text, color, 
-            background-color, font-size, and bounding box info.
+        CSS styles of all visible text elements.
         """
         async with async_playwright() as pw:
             browser = await pw.chromium.launch(headless=self.headless)
-            context = await browser.new_context(
-                viewport={"width": 1920, "height": 1080}
-            )
+            
+            context_options = {"viewport": {"width": 1920, "height": 1080}}
+            if storage_state:
+                context_options["storage_state"] = storage_state
+                
+            context = await browser.new_context(**context_options)
+            
+            if cookies:
+                await context.add_cookies(cookies)
+                
             page = await context.new_page()
             
             try:
@@ -235,7 +252,7 @@ class BrowserEngine:
                                 selector: el.id 
                                     ? '#' + el.id 
                                     : el.className 
-                                        ? el.tagName.toLowerCase() + '.' + el.className.split(' ').join('.')
+                                        ? el.tagName.toLowerCase() + '.' + el.className.split(' ').join('.') 
                                         : el.tagName.toLowerCase()
                             });
                         }
@@ -250,18 +267,35 @@ class BrowserEngine:
                 await context.close()
                 await browser.close()
 
-    async def get_page_html(self, url: str) -> str:
+    async def get_page_html(
+        self, 
+        url: str,
+        cookies: Optional[List[dict]] = None,
+        storage_state: Optional[Union[dict, str]] = None,
+    ) -> str:
         """
         Simple utility to fetch the fully-rendered HTML of a page.
         Useful for DOM parsing without needing screenshots.
         """
         async with async_playwright() as pw:
             browser = await pw.chromium.launch(headless=self.headless)
-            page = await browser.new_page()
+            
+            context_options = {}
+            if storage_state:
+                context_options["storage_state"] = storage_state
+                
+            context = await browser.new_context(**context_options)
+            
+            if cookies:
+                await context.add_cookies(cookies)
+                
+            page = await context.new_page()
+            
             try:
                 await page.goto(url, wait_until="networkidle")
                 await page.wait_for_timeout(1000)
                 html = await page.content()
                 return html
             finally:
+                await context.close()
                 await browser.close()
