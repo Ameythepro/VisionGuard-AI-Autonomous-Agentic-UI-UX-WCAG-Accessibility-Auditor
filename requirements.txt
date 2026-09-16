@@ -8,6 +8,9 @@ streamlit
 streamlit-image-comparison
 crewai
 langchain-google-genai
+google-generativeai
+Pillow
+pydantic
 redis
 celery
 python-dotenv
