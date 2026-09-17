@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Textarea, Select } from "@/components/ui/Input";
 import { Badge } from "@/components/ui/Badge";
-import { api, type SandboxResponse } from "@/lib/api";
+import { api, type SandboxResponse, API_BASE } from "@/lib/api";
 
 const VIEWPORTS = [
   { value: "desktop_1080p", label: "Desktop 1080p" },
@@ -25,14 +25,19 @@ a {
 }`;
 
 function ScreenshotBox({ path, label }: { path?: string; label: string }) {
+  const safePath = path?.replace(/\\/g, '/');
   return (
     <div className="space-y-1.5">
       <p className="text-xs font-medium text-text-secondary">{label}</p>
-      <div className="bg-bg-subtle border border-border rounded-lg h-52 flex items-center justify-center">
-        <div className="text-center space-y-1.5 px-4">
-          <Image size={22} className="text-text-tertiary mx-auto" />
-          <p className="text-xs text-text-tertiary font-mono break-all">{path ?? "—"}</p>
-        </div>
+      <div className="bg-bg-subtle border border-border rounded-lg h-52 flex items-center justify-center overflow-hidden">
+        {safePath ? (
+          <img src={`${API_BASE}/${safePath}`} alt={label} className="max-h-full max-w-full object-contain" />
+        ) : (
+          <div className="text-center space-y-1.5 px-4">
+            <Image size={22} className="text-text-tertiary mx-auto" />
+            <p className="text-xs text-text-tertiary font-mono break-all">—</p>
+          </div>
+        )}
       </div>
     </div>
   );

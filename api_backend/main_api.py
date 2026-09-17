@@ -24,6 +24,7 @@ from typing import List, Optional
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, HttpUrl, Field
 
 # Ensure project root is importable
@@ -51,6 +52,9 @@ logger = logging.getLogger("visionguard.api")
 # ─────────────────────────────────────────────
 # FastAPI Application
 # ─────────────────────────────────────────────
+if sys.platform == "win32":
+    asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
+
 app = FastAPI(
     title="VisionGuard AI API",
     description=(
@@ -71,6 +75,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+os.makedirs("temp_screenshots", exist_ok=True)
+app.mount("/temp_screenshots", StaticFiles(directory="temp_screenshots"), name="temp_screenshots")
 
 # Shared service instances
 browser_engine = BrowserEngine(headless=True)
