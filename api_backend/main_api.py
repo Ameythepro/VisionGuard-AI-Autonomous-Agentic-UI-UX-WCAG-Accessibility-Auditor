@@ -39,6 +39,9 @@ from dom_accessibility.dom_parser import DOMParser
 from dom_accessibility.wcag_checker import audit_computed_styles
 from dom_accessibility.ast_extractor import ASTExtractor
 
+# ── Role 1: AI Agent Engine (Gemini multimodal) ────────
+from ai_engine.agent_engine import VisionGuardAgent
+
 load_dotenv()
 
 # Configure logging
@@ -83,6 +86,7 @@ app.mount("/temp_screenshots", StaticFiles(directory="temp_screenshots"), name="
 browser_engine = BrowserEngine(headless=True)
 sandbox_injector = SandboxInjector(headless=True)
 cache = RedisCache()
+ai_agent = VisionGuardAgent()  # Reads GOOGLE_API_KEY from .env automatically
 
 # In-memory store for audit results (keyed by audit_id)
 audit_store: dict = {}
@@ -226,7 +230,7 @@ async def audit_url(request: AuditRequest):
             "viewports_captured": list(audit_capture.captures.keys()),
             "viewports_failed": audit_capture.errors,
             "screenshots": {
-                name: capture.screenshot_path 
+                name: capture.screenshot_path.replace("\\", "/")
                 for name, capture in audit_capture.captures.items()
             },
             "page_title": next(iter(audit_capture.captures.values())).page_title 
@@ -268,7 +272,54 @@ async def audit_url(request: AuditRequest):
                 "inputs_missing_labels": dom_result.inputs_missing_labels,
             },
             "unified_diagnostic": ast_extractor.diagnostic_to_dict(unified_diagnostic),
+            # ── AI mode info ──
+            "ai_mode": ai_agent.mode,
         }
+        
+        # ── Role 1: AI-Enhanced Analysis (Gemini Multimodal) ──
+        if ai_agent._ai_available:
+            try:
+                logger.info(f"[{audit_id}] Running Gemini AI analysis...")
+                # Find a screenshot to send to Gemini
+                screenshot_path = result["screenshots"].get(
+                    "desktop_1080p",
+                    next(iter(result["screenshots"].values()), None),
+                )
+                # Build violations list in the format agent_engine expects
+                from ai_engine.agent_engine import run_wcag_audit as agent_wcag_audit
+                agent_violations, _ = agent_wcag_audit(computed_styles)
+                
+                # Step 3: AI multimodal analysis
+                if screenshot_path and os.path.exists(screenshot_path):
+                    ai_analysis = await ai_agent._analyze_with_llm(
+                        screenshot_path=screenshot_path,
+                        violations=agent_violations,
+                        computed_styles=computed_styles,
+                        url=url,
+                        page_title=result.get("page_title", ""),
+                    )
+                    result["ai_analysis"] = ai_analysis
+                    logger.info(f"[{audit_id}] Gemini AI analysis complete!")
+                
+                # Step 4: AI-generated CSS patches
+                if agent_violations:
+                    patches_data = await ai_agent._generate_patches(agent_violations, url)
+                    result["ai_patches"] = patches_data.get("patches", [])
+                    result["ai_combined_patch"] = patches_data.get("combined_patch", "")
+                    logger.info(f"[{audit_id}] AI generated {len(result['ai_patches'])} CSS patches")
+                else:
+                    result["ai_patches"] = []
+                    result["ai_combined_patch"] = ""
+                    
+            except Exception as ai_err:
+                logger.warning(f"[{audit_id}] AI analysis failed (non-fatal): {ai_err}")
+                result["ai_analysis"] = {"error": str(ai_err)}
+                result["ai_patches"] = []
+                result["ai_combined_patch"] = ""
+        else:
+            result["ai_analysis"] = None
+            result["ai_patches"] = []
+            result["ai_combined_patch"] = ""
         
         # Cache the result
         cache.cache_audit_result(url, result)
@@ -477,6 +528,7 @@ async def startup_event():
     logger.info("=" * 50)
     logger.info("VisionGuard AI API starting up...")
     logger.info(f"Redis available: {cache.is_available()}")
+    logger.info(f"AI mode: {ai_agent.mode} (Gemini={'ON' if ai_agent._ai_available else 'OFF'})")
     logger.info("=" * 50)
 
 

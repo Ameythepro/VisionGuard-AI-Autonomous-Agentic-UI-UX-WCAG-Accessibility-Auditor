@@ -361,7 +361,7 @@ class VisionGuardAgent:
         print(report["wcag_summary"])
     """
 
-    DEFAULT_MODEL = "gemini-1.5-flash"
+    DEFAULT_MODEL = "gemini-1.5-pro"
 
     def __init__(
         self,
