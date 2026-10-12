@@ -1,9 +1,17 @@
 .env
+.env.*
 __pycache__/
 *.pyc
 venv/
+venv*/
 env/
 /test-results/
 *.png
 *.jpg
+*.jpeg
 .DS_Store
+node-v*/
+temp_screenshots/
+temp_*/
+frontend_ui/visionguard-ui/node_modules/
+frontend_ui/visionguard-ui/dist/

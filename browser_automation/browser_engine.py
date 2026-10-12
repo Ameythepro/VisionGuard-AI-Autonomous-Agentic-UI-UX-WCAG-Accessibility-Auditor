@@ -60,9 +60,9 @@ class BrowserEngine:
     """
     
     # Maximum time in ms to wait for a page to load
-    DEFAULT_NAVIGATION_TIMEOUT = 30_000
+    DEFAULT_NAVIGATION_TIMEOUT = 60_000
     # Time in ms to wait after network idle for JS animations
-    POST_LOAD_SETTLE_TIME = 1500
+    POST_LOAD_SETTLE_TIME = 3000
 
     def __init__(self, headless: bool = True, timeout: int = DEFAULT_NAVIGATION_TIMEOUT):
         self.headless = headless
@@ -159,7 +159,7 @@ class BrowserEngine:
             page.set_default_navigation_timeout(self.timeout)
             
             # Navigate and wait for network to go idle
-            await page.goto(url, wait_until="networkidle")
+            await page.goto(url, wait_until="domcontentloaded")
             
             # Allow JS animations / lazy-loaded content to settle
             await page.wait_for_timeout(self.POST_LOAD_SETTLE_TIME)
@@ -212,7 +212,7 @@ class BrowserEngine:
             page = await context.new_page()
             
             try:
-                await page.goto(url, wait_until="networkidle")
+                await page.goto(url, wait_until="domcontentloaded")
                 await page.wait_for_timeout(self.POST_LOAD_SETTLE_TIME)
                 
                 # JavaScript to extract computed styles of text-bearing elements
@@ -292,7 +292,7 @@ class BrowserEngine:
             page = await context.new_page()
             
             try:
-                await page.goto(url, wait_until="networkidle")
+                await page.goto(url, wait_until="domcontentloaded")
                 await page.wait_for_timeout(1000)
                 html = await page.content()
                 return html

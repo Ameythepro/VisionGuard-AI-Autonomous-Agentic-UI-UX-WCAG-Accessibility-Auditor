@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { Search, Clock, Globe, Layers, AlertTriangle, CheckCircle } from "lucide-react";
 import { toast } from "sonner";
@@ -10,6 +10,7 @@ import { SkeletonMetrics } from "@/components/ui/Skeleton";
 import { ErrorState } from "@/components/ui/States";
 import { Badge } from "@/components/ui/Badge";
 import { api, type AuditResult, type SandboxResponse } from "@/lib/api";
+import { useWorkspaceStore } from "@/store/workspaceStore";
 import {
   getContrastRatioFromRgb,
   isLargeText,
@@ -25,7 +26,7 @@ function countViolations(styles: AuditResult["computed_styles"]) {
 }
 
 export default function AuditPage() {
-  const [url, setUrl] = useState("");
+  const { auditUrl, setAuditUrl } = useWorkspaceStore();
   const [result, setResult] = useState<AuditResult | null>(null);
   const [sandboxResult] = useState<SandboxResponse | null>(null);
   const [isCached, setIsCached] = useState(false);
@@ -53,13 +54,12 @@ export default function AuditPage() {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    const trimmed = url.trim();
+    const trimmed = auditUrl.trim();
     if (!trimmed) return;
     if (!trimmed.startsWith("http://") && !trimmed.startsWith("https://")) {
       toast.error("Invalid URL", { description: "URL must start with http:// or https://" });
       return;
     }
-    reset();
     setResult(null);
     mutate(trimmed);
   };
@@ -83,14 +83,14 @@ export default function AuditPage() {
             <Input
               type="url"
               placeholder="https://example.com"
-              value={url}
-              onChange={(e) => setUrl(e.target.value)}
+              value={auditUrl}
+              onChange={(e) => setAuditUrl(e.target.value)}
               leftIcon={<Globe size={15} />}
               aria-label="URL to audit"
               disabled={isPending}
             />
           </div>
-          <Button type="submit" loading={isPending} disabled={!url.trim()}>
+          <Button type="submit" loading={isPending} disabled={!auditUrl.trim()}>
             <Search size={15} />
             {isPending ? "Auditing…" : "Audit"}
           </Button>
@@ -103,7 +103,7 @@ export default function AuditPage() {
             <button
               key={eg}
               type="button"
-              onClick={() => setUrl(eg)}
+              onClick={() => setAuditUrl(eg)}
               className="text-xs text-accent hover:text-accent-hover transition-colors duration-150 font-mono"
             >
               {eg}
@@ -131,7 +131,7 @@ export default function AuditPage() {
           title="Audit failed"
           message={(error as Error)?.message ?? "An unexpected error occurred."}
           action={
-            <Button variant="secondary" size="sm" onClick={() => { reset(); mutate(url); }}>
+            <Button variant="secondary" size="sm" onClick={() => { reset(); mutate(auditUrl); }}>
               Retry
             </Button>
           }

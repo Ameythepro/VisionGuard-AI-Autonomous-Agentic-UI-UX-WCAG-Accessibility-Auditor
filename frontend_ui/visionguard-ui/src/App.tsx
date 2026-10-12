@@ -2,9 +2,12 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "sonner";
 import { Layout } from "@/components/layout/Layout";
+import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
 import AuditPage from "@/pages/AuditPage";
 import PatchLabPage from "@/pages/PatchLabPage";
 import WcagGuidePage from "@/pages/WcagGuidePage";
+import ScreenshotLabPage from "@/pages/ScreenshotLabPage";
+
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -21,9 +24,10 @@ export default function App() {
       <BrowserRouter>
         <Routes>
           <Route element={<Layout />}>
-            <Route path="/" element={<AuditPage />} />
-            <Route path="/patch-lab" element={<PatchLabPage />} />
-            <Route path="/wcag" element={<WcagGuidePage />} />
+            <Route path="/" element={<ErrorBoundary><AuditPage /></ErrorBoundary>} />
+            <Route path="/screenshot-lab" element={<ErrorBoundary><ScreenshotLabPage /></ErrorBoundary>} />
+            <Route path="/patch-lab" element={<ErrorBoundary><PatchLabPage /></ErrorBoundary>} />
+            <Route path="/wcag" element={<ErrorBoundary><WcagGuidePage /></ErrorBoundary>} />
           </Route>
         </Routes>
       </BrowserRouter>

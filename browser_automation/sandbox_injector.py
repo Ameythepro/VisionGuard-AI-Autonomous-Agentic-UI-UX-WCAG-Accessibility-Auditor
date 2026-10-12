@@ -91,7 +91,7 @@ class SandboxInjector:
                 # ---- BEFORE: Capture the original page ----
                 ctx_before = await browser.new_context(**context_opts)
                 page_before = await ctx_before.new_page()
-                await page_before.goto(url, wait_until="networkidle")
+                await page_before.goto(url, wait_until="domcontentloaded")
                 await page_before.wait_for_timeout(1000)
                 await page_before.screenshot(path=before_path, full_page=True)
                 await ctx_before.close()
@@ -99,7 +99,7 @@ class SandboxInjector:
                 # ---- AFTER: Capture the page with CSS patch injected ----
                 ctx_after = await browser.new_context(**context_opts)
                 page_after = await ctx_after.new_page()
-                await page_after.goto(url, wait_until="networkidle")
+                await page_after.goto(url, wait_until="domcontentloaded")
                 await page_after.wait_for_timeout(500)
                 
                 # Inject the CSS patch as a <style> tag at the end of <head>

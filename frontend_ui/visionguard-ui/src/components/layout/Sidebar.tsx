@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { NavLink, useLocation } from "react-router-dom";
-import { ScanSearch, FlaskConical, BookOpen, Shield, ChevronLeft, ChevronRight, Activity } from "lucide-react";
+import { ScanSearch, FlaskConical, BookOpen, Shield, ChevronLeft, ChevronRight, Activity, Image } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { api, type HealthResponse } from "@/lib/api";
 
@@ -17,6 +17,12 @@ const navItems: NavItem[] = [
     icon: <ScanSearch size={18} />,
     label: "Audit",
     description: "Run accessibility audits",
+  },
+  {
+    to: "/screenshot-lab",
+    icon: <Image size={18} />,
+    label: "Screenshot Lab",
+    description: "AI screenshot analysis",
   },
   {
     to: "/patch-lab",
@@ -126,7 +132,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
           )}
           {!health && (
             <p className="text-2xs text-danger">
-              Cannot reach localhost:8000
+              Cannot reach localhost:8001
             </p>
           )}
         </div>

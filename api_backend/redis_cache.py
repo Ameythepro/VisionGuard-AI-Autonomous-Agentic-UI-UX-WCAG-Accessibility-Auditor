@@ -73,7 +73,8 @@ class RedisCache:
                     db=self.db,
                     password=self.password,
                     decode_responses=True,
-                    socket_connect_timeout=2,
+                    socket_connect_timeout=1,
+                    socket_timeout=1,
                 )
                 # Test the connection
                 self._client.ping()

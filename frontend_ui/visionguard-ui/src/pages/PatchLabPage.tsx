@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/Input";
 import { Textarea, Select } from "@/components/ui/Input";
 import { Badge } from "@/components/ui/Badge";
 import { api, type SandboxResponse, API_BASE } from "@/lib/api";
+import { useWorkspaceStore } from "@/store/workspaceStore";
 
 const VIEWPORTS = [
   { value: "desktop_1080p", label: "Desktop 1080p" },
@@ -44,8 +45,7 @@ function ScreenshotBox({ path, label }: { path?: string; label: string }) {
 }
 
 export default function PatchLabPage() {
-  const [patchUrl, setPatchUrl] = useState("");
-  const [cssPatch, setCssPatch] = useState("");
+  const { patchUrl, setPatchUrl, cssPatch, setCssPatch } = useWorkspaceStore();
   const [viewport, setViewport] = useState("desktop_1080p");
   const [lastResult, setLastResult] = useState<SandboxResponse | null>(null);
 

@@ -13,10 +13,10 @@ export default defineConfig({
     port: 5173,
     proxy: {
       // Proxy API calls to FastAPI during development
-      "/audit-url": "http://localhost:8000",
-      "/audit":     "http://localhost:8000",
-      "/sandbox":   "http://localhost:8000",
-      "/health":    "http://localhost:8000",
+      "/audit-url": "http://localhost:8001",
+      "/audit":     "http://localhost:8001",
+      "/sandbox":   "http://localhost:8001",
+      "/health":    "http://localhost:8001",
     },
   },
 });

@@ -12,6 +12,7 @@ Run with: uvicorn api_backend.main_api:app --reload --port 8000
 """
 
 import asyncio
+import json
 import logging
 import os
 import sys
@@ -22,7 +23,7 @@ from datetime import datetime
 from typing import List, Optional
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, HttpUrl, Field
@@ -41,6 +42,9 @@ from dom_accessibility.ast_extractor import ASTExtractor
 
 # ── Role 1: AI Agent Engine (Gemini multimodal) ────────
 from ai_engine.agent_engine import VisionGuardAgent
+
+# ── Screenshot Analyzer (Screenshot Lab feature) ────────
+from api_backend.screenshot_analyzer import ScreenshotAnalyzer
 
 load_dotenv()
 
@@ -87,6 +91,7 @@ browser_engine = BrowserEngine(headless=True)
 sandbox_injector = SandboxInjector(headless=True)
 cache = RedisCache()
 ai_agent = VisionGuardAgent()  # Reads GOOGLE_API_KEY from .env automatically
+screenshot_analyzer = ScreenshotAnalyzer()  # Screenshot Lab AI analyzer
 
 # In-memory store for audit results (keyed by audit_id)
 audit_store: dict = {}
@@ -518,6 +523,135 @@ async def validate_css_patch_endpoint(css_patch: str = ""):
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ─────────────────────────────────────────────
+# Screenshot Lab Endpoints
+# ─────────────────────────────────────────────
+
+@app.post("/screenshot/analyze")
+async def analyze_screenshot_endpoint(
+    file: UploadFile = File(..., description="UI screenshot to analyze"),
+    prompt: str = Form(default="", description="Optional context/instructions"),
+):
+    """
+    Upload a UI screenshot for AI-powered accessibility analysis.
+    
+    The AI will analyze the screenshot and return:
+    - Overall accessibility score
+    - List of WCAG violations found  
+    - Positive findings
+    - Design observations
+    """
+    try:
+        if not file.content_type or not file.content_type.startswith("image/"):
+            raise HTTPException(status_code=400, detail="File must be an image")
+
+        image_bytes = await file.read()
+        if len(image_bytes) > 10 * 1024 * 1024:  # 10MB limit
+            raise HTTPException(status_code=400, detail="Image must be under 10MB")
+
+        analysis = await screenshot_analyzer.analyze_screenshot(
+            image_bytes=image_bytes,
+            filename=file.filename or "upload.png",
+            user_prompt=prompt,
+        )
+
+        return {
+            "analysis_id": analysis.analysis_id,
+            "timestamp": analysis.timestamp,
+            "overall_score": analysis.overall_score,
+            "summary": analysis.summary,
+            "violations": analysis.violations,
+            "positive_findings": analysis.positive_findings,
+            "design_observations": analysis.design_observations,
+            "original_screenshot": analysis.original_screenshot_path,
+            "error": analysis.error,
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("Screenshot analysis failed: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/screenshot/generate-fix")
+async def generate_fix_endpoint(
+    analysis_id: str = Form(..., description="Analysis ID from /screenshot/analyze"),
+    prompt: str = Form(default="", description="Additional instructions for the fix"),
+):
+    """
+    Generate accessibility-fixed HTML/CSS code for a previously analyzed screenshot.
+    Also renders the fixed version as a new screenshot for comparison.
+    """
+    try:
+        result = await screenshot_analyzer.generate_fixed_code(
+            analysis_id=analysis_id,
+            user_prompt=prompt,
+        )
+
+        if "error" in result and not result.get("html"):
+            raise HTTPException(status_code=404, detail=result["error"])
+
+        return result
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("Fix generation failed: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/screenshot/refine")
+async def refine_code_endpoint(
+    analysis_id: str = Form(..., description="Analysis ID"),
+    prompt: str = Form(..., description="Refinement instructions"),
+):
+    """
+    Refine previously generated code based on user feedback/prompts.
+    """
+    try:
+        result = await screenshot_analyzer.refine_code(
+            analysis_id=analysis_id,
+            user_prompt=prompt,
+        )
+        return result
+
+    except Exception as e:
+        logger.error("Code refinement failed: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/screenshot/chat")
+async def screenshot_chat_endpoint(
+    analysis_id: str = Form(default="general", description="Analysis ID for context"),
+    message: str = Form(..., description="User message"),
+):
+    """
+    AI accessibility consultant chat. Send messages and get helpful
+    suggestions for improving UI accessibility.
+    """
+    try:
+        response = await screenshot_analyzer.chat(
+            analysis_id=analysis_id,
+            user_message=message,
+        )
+        return {
+            "response": response,
+            "analysis_id": analysis_id,
+        }
+
+    except Exception as e:
+        logger.error("Chat failed: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/screenshot/chat-history/{analysis_id}")
+async def get_chat_history_endpoint(analysis_id: str):
+    """Retrieve the chat history for a given analysis session."""
+    history = screenshot_analyzer.get_chat_history(analysis_id)
+    return {"analysis_id": analysis_id, "messages": history}
 
 
 # ─────────────────────────────────────────────

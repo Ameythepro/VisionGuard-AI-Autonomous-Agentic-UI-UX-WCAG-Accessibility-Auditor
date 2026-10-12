@@ -1,0 +1,11 @@
+fastapi
+uvicorn
+playwright
+beautifulsoup4
+tinycss2
+numpy
+google-generativeai
+Pillow
+pydantic
+python-dotenv
+python-multipart

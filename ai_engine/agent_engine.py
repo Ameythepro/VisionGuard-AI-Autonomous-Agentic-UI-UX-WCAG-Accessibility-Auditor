@@ -361,7 +361,7 @@ class VisionGuardAgent:
         print(report["wcag_summary"])
     """
 
-    DEFAULT_MODEL = "gemini-1.5-pro"
+    DEFAULT_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.5-flash")
 
     def __init__(
         self,
@@ -663,7 +663,8 @@ class VisionGuardAgent:
             # Run the (blocking) Gemini call in a thread
             response = await asyncio.to_thread(
                 self._model.generate_content,
-                [full_prompt, image],
+                contents=[full_prompt, image],
+                request_options={"retry": None}
             )
 
             return self._parse_llm_json(response.text)
@@ -696,7 +697,8 @@ class VisionGuardAgent:
 
             response = await asyncio.to_thread(
                 self._model.generate_content,
-                full_prompt,
+                contents=full_prompt,
+                request_options={"retry": None}
             )
 
             result = self._parse_llm_json(response.text)
