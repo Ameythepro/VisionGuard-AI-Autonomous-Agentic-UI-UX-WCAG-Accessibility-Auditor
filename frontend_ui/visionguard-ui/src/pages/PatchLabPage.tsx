@@ -1,42 +1,55 @@
 import { useState } from "react";
 import { useMutation } from "@tanstack/react-query";
-import { FlaskConical, Image, Check, AlertTriangle } from "lucide-react";
+import { FlaskConical, Image as ImageIcon, Check, AlertTriangle, Layers, Eye } from "lucide-react";
 import { toast } from "sonner";
-import { Button } from "@/components/ui/Button";
-import { Input } from "@/components/ui/Input";
-import { Textarea, Select } from "@/components/ui/Input";
-import { Badge } from "@/components/ui/Badge";
 import { api, type SandboxResponse, API_BASE } from "@/lib/api";
 import { useWorkspaceStore } from "@/store/workspaceStore";
 
 const VIEWPORTS = [
-  { value: "desktop_1080p", label: "Desktop 1080p" },
-  { value: "desktop_720p",  label: "Desktop 720p" },
-  { value: "tablet_768",    label: "Tablet (768px)" },
-  { value: "mobile_375",    label: "Mobile (375px)" },
+  { value: "desktop_1080p", label: "Desktop 1080p (1920 × 1080)" },
+  { value: "desktop_720p",  label: "Desktop 720p (1280 × 720)" },
+  { value: "tablet_768",    label: "Tablet (768 × 1024)" },
+  { value: "mobile_375",    label: "Mobile (375 × 667)" },
 ];
 
-const CSS_PLACEHOLDER = `/* Example: fix low-contrast grey text */
-p, span {
-  color: #1a1a1a !important;
-}
+const SAMPLE_PATCHES = [
+  {
+    name: "Darken Low-Contrast Text",
+    css: `/* Fix WCAG SC 1.4.3: Ensure text meets 4.5:1 ratio */\np, span, li, a, h1, h2, h3, h4, h5, h6 {\n  color: #0f172a !important;\n}\nbody {\n  background-color: #ffffff !important;\n}`,
+  },
+  {
+    name: "Enlarge Touch Targets (44px)",
+    css: `/* Fix WCAG SC 2.5.5: Ensure clickable elements >= 44x44px */\nbutton, a, input[type="button"], input[type="submit"] {\n  min-height: 44px !important;\n  min-width: 44px !important;\n  display: inline-flex !important;\n  align-items: center !important;\n  justify-content: center !important;\n  padding: 8px 16px !important;\n}`,
+  },
+  {
+    name: "Accessible Focus Rings",
+    css: `/* Fix WCAG SC 2.4.7: Clear visible keyboard focus */\n*:focus-visible {\n  outline: 3px solid #2563eb !important;\n  outline-offset: 3px !important;\n  border-radius: 4px !important;\n}`,
+  },
+];
 
-a {
-  color: #1d4ed8 !important;
-}`;
-
-function ScreenshotBox({ path, label }: { path?: string; label: string }) {
+function ScreenshotBox({ path, label, badgeColor }: { path?: string; label: string; badgeColor?: string }) {
   const safePath = path?.replace(/\\/g, '/');
   return (
-    <div className="space-y-1.5">
-      <p className="text-xs font-medium text-text-secondary">{label}</p>
-      <div className="bg-bg-subtle border border-border rounded-lg h-52 flex items-center justify-center overflow-hidden">
+    <div className="space-y-2">
+      <div className="flex items-center justify-between">
+        <p className="text-xs font-semibold text-slate-800">{label}</p>
+        {path && (
+          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${badgeColor ?? "bg-slate-100 text-slate-700 border border-slate-200"}`}>
+            Captured
+          </span>
+        )}
+      </div>
+      <div className="bg-slate-100 border border-slate-200 rounded-xl h-56 flex items-center justify-center overflow-hidden relative shadow-inner p-2">
         {safePath ? (
-          <img src={`${API_BASE}/${safePath}`} alt={label} className="max-h-full max-w-full object-contain" />
+          <img 
+            src={`${API_BASE}/${safePath}`} 
+            alt={label} 
+            className="max-h-full max-w-full object-contain rounded" 
+          />
         ) : (
-          <div className="text-center space-y-1.5 px-4">
-            <Image size={22} className="text-text-tertiary mx-auto" />
-            <p className="text-xs text-text-tertiary font-mono break-all">—</p>
+          <div className="text-center space-y-1.5 px-4 text-slate-400">
+            <ImageIcon size={24} className="mx-auto text-slate-400" />
+            <p className="text-xs font-mono">— Waiting for patch injection —</p>
           </div>
         )}
       </div>
@@ -55,7 +68,7 @@ export default function PatchLabPage() {
     onSuccess: (data) => {
       setLastResult(data);
       if (data.success) {
-        toast.success("Patch applied successfully");
+        toast.success("CSS patch applied & verified in sandbox");
       } else {
         toast.error("Patch failed", { description: data.error });
       }
@@ -67,125 +80,161 @@ export default function PatchLabPage() {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!patchUrl.trim()) return;
-    if (!cssPatch.trim()) return;
+    if (!patchUrl.trim() || !cssPatch.trim()) return;
     mutate();
   };
 
   const canSubmit = patchUrl.trim() && cssPatch.trim() && !isPending;
 
   return (
-    <div className="max-w-4xl mx-auto space-y-8">
-      {/* ── Header ─────────────────────────────────────────────────────── */}
-      <section>
-        <h2 className="text-lg font-semibold text-text-primary mb-1">CSS Patch Lab</h2>
-        <p className="text-sm text-text-secondary">
-          Inject a CSS patch into a sandboxed Chromium browser and capture before/after
-          screenshots to verify fixes — this powers the AI reflection loop.
+    <div className="space-y-8 pb-12">
+      {/* ── Page Header ── */}
+      <div className="p-6 sm:p-8 rounded-2xl bg-white border border-slate-200 shadow-sm space-y-2">
+        <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200 text-xs font-bold uppercase tracking-wider">
+          <FlaskConical size={12} className="text-blue-600" />
+          <span>Closed-Loop Verification Sandbox</span>
+        </div>
+        <h2 className="text-2xl font-bold text-slate-900 tracking-tight">
+          CSS Remediation & Reflection Sandbox
+        </h2>
+        <p className="text-xs sm:text-sm text-slate-600 max-w-3xl leading-relaxed">
+          Inject synthesized CSS patches into a sandboxed Chromium browser instance. VisionGuard rasterizes the page before and after injection to prove zero visual regressions.
         </p>
-      </section>
+      </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-[1fr_1fr] gap-6">
-        {/* ── Form ─────────────────────────────────────────────────────── */}
-        <form onSubmit={handleSubmit} className="space-y-4" noValidate>
-          <Input
-            label="Target URL"
-            type="url"
-            placeholder="https://example.com"
-            value={patchUrl}
-            onChange={(e) => setPatchUrl(e.target.value)}
-            disabled={isPending}
-            hint="The URL to inject the CSS patch into"
-          />
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+        {/* ── Form Section ── */}
+        <div className="bg-white p-6 sm:p-8 rounded-2xl border border-slate-200 shadow-sm space-y-5">
+          <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+            <Layers size={16} className="text-blue-600" />
+            <span>Sandbox Configuration</span>
+          </h3>
 
-          <Select
-            label="Viewport"
-            options={VIEWPORTS}
-            value={viewport}
-            onChange={(e) => setViewport(e.target.value)}
-            disabled={isPending}
-          />
+          <form onSubmit={handleSubmit} className="space-y-4" noValidate>
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                Target URL to Patch
+              </label>
+              <input
+                type="url"
+                placeholder="https://example.com"
+                value={patchUrl}
+                onChange={(e) => setPatchUrl(e.target.value)}
+                disabled={isPending}
+                className="w-full px-3.5 py-2.5 text-xs font-mono rounded-xl bg-slate-50 border border-slate-300 text-slate-900 placeholder-slate-400 focus:outline-none focus:border-blue-600 focus:bg-white transition-all"
+              />
+            </div>
 
-          <Textarea
-            label="CSS patch"
-            value={cssPatch}
-            onChange={(e) => setCssPatch(e.target.value)}
-            placeholder={CSS_PLACEHOLDER}
-            disabled={isPending}
-            hint="This CSS is injected via a <style> tag into the live page"
-            className="min-h-[200px] lg:min-h-[280px]"
-          />
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                Emulated Viewport
+              </label>
+              <select
+                value={viewport}
+                onChange={(e) => setViewport(e.target.value)}
+                disabled={isPending}
+                className="w-full px-3.5 py-2.5 text-xs rounded-xl bg-slate-50 border border-slate-300 text-slate-900 focus:outline-none focus:border-blue-600 focus:bg-white transition-all"
+              >
+                {VIEWPORTS.map((vp) => (
+                  <option key={vp.value} value={vp.value}>
+                    {vp.label}
+                  </option>
+                ))}
+              </select>
+            </div>
 
-          <Button
-            type="submit"
-            loading={isPending}
-            disabled={!canSubmit}
-            className="w-full"
-          >
-            <FlaskConical size={15} />
-            {isPending ? "Injecting patch…" : "Apply & verify patch"}
-          </Button>
+            {/* Quick Sample Patch Buttons */}
+            <div>
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="block text-xs font-semibold text-slate-700">
+                  CSS Remediation Patch
+                </label>
+                <span className="text-[10px] text-slate-500 font-medium">Quick templates:</span>
+              </div>
+              <div className="flex flex-wrap gap-1.5 mb-2">
+                {SAMPLE_PATCHES.map((sp) => (
+                  <button
+                    key={sp.name}
+                    type="button"
+                    onClick={() => setCssPatch(sp.css)}
+                    className="text-[11px] px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-blue-700 border border-slate-200 transition-colors font-medium"
+                  >
+                    + {sp.name}
+                  </button>
+                ))}
+              </div>
+              <textarea
+                value={cssPatch}
+                onChange={(e) => setCssPatch(e.target.value)}
+                placeholder="/* Paste or write CSS overrides to inject... */"
+                disabled={isPending}
+                rows={8}
+                className="w-full p-3 text-xs font-mono rounded-xl bg-slate-50 border border-slate-300 text-slate-900 placeholder-slate-400 focus:outline-none focus:border-blue-600 focus:bg-white transition-all leading-relaxed"
+              />
+            </div>
 
-          {isError && (
-            <p className="text-sm text-danger flex items-center gap-1.5">
-              <AlertTriangle size={14} />
-              {(error as Error)?.message}
-            </p>
-          )}
-        </form>
-
-        {/* ── Result panel ─────────────────────────────────────────────── */}
-        <div className="space-y-4">
-          {/* Status */}
-          {lastResult && (
-            <div className="flex items-center gap-2">
-              {lastResult.success ? (
+            <button
+              type="submit"
+              disabled={!canSubmit}
+              className="w-full inline-flex items-center justify-center gap-2 py-3 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold shadow-sm disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+            >
+              {isPending ? (
                 <>
-                  <div className="w-5 h-5 rounded-full bg-success-subtle border border-success-muted flex items-center justify-center">
-                    <Check size={12} className="text-success" />
-                  </div>
-                  <Badge variant="success">Patch applied</Badge>
+                  <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  <span>Executing Sandboxed Browser Injection…</span>
                 </>
               ) : (
                 <>
-                  <div className="w-5 h-5 rounded-full bg-danger-subtle border border-danger-muted flex items-center justify-center">
-                    <AlertTriangle size={12} className="text-danger" />
-                  </div>
-                  <Badge variant="danger">Patch failed</Badge>
-                  {lastResult.error && (
-                    <span className="text-xs text-text-secondary">{lastResult.error}</span>
-                  )}
+                  <FlaskConical size={16} />
+                  <span>Apply & Verify in Sandbox</span>
                 </>
               )}
-            </div>
-          )}
+            </button>
 
-          {/* Before/After screenshots */}
-          <ScreenshotBox
-            path={lastResult?.original_screenshot}
-            label="Before (original)"
-          />
-          <ScreenshotBox
-            path={lastResult?.patched_screenshot}
-            label="After (patched)"
-          />
-
-          {!lastResult && !isPending && (
-            <div className="h-52 bg-bg-subtle border border-dashed border-border rounded-lg flex items-center justify-center">
-              <p className="text-sm text-text-tertiary text-center px-4">
-                Screenshots will appear here after you apply a patch
+            {isError && (
+              <p className="text-xs text-rose-600 flex items-center gap-1.5">
+                <AlertTriangle size={14} />
+                <span>{(error as Error)?.message}</span>
               </p>
-            </div>
-          )}
+            )}
+          </form>
+        </div>
 
-          {isPending && (
-            <div className="h-52 bg-bg-subtle border border-border rounded-lg flex items-center justify-center">
-              <div className="text-center space-y-2">
-                <div className="w-2 h-2 bg-accent rounded-full animate-pulse mx-auto" />
-                <p className="text-sm text-text-secondary">Launching sandboxed browser…</p>
+        {/* ── Results & Before/After Comparison ── */}
+        <div className="bg-white p-6 sm:p-8 rounded-2xl border border-slate-200 shadow-sm space-y-5">
+          <div className="flex items-center justify-between border-b border-slate-200 pb-4">
+            <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+              <Eye size={16} className="text-blue-600" />
+              <span>Visual Comparison (Rasterized)</span>
+            </h3>
+
+            {lastResult && (
+              <div className="flex items-center gap-2">
+                {lastResult.success ? (
+                  <span className="px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs font-semibold flex items-center gap-1">
+                    <Check size={12} /> Verified Pass
+                  </span>
+                ) : (
+                  <span className="px-2.5 py-1 rounded-full bg-rose-50 text-rose-700 border border-rose-200 text-xs font-semibold flex items-center gap-1">
+                    <AlertTriangle size={12} /> Failed
+                  </span>
+                )}
               </div>
-            </div>
-          )}
+            )}
+          </div>
+
+          <div className="space-y-4">
+            <ScreenshotBox
+              path={lastResult?.original_screenshot}
+              label="Original State (Before Patch)"
+              badgeColor="bg-slate-100 text-slate-700 border border-slate-200"
+            />
+            <ScreenshotBox
+              path={lastResult?.patched_screenshot}
+              label="Patched State (After Injection)"
+              badgeColor="bg-emerald-50 text-emerald-700 border border-emerald-200"
+            />
+          </div>
         </div>
       </div>
     </div>

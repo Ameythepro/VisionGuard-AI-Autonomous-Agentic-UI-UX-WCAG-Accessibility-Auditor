@@ -263,14 +263,14 @@ export function ResultTabs({ result, sandboxResult }: ResultTabsProps) {
                 "whitespace-nowrap transition-colors duration-150 shrink-0",
                 "focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-[-2px]",
                 isActive
-                  ? "text-text-primary border-b-2 border-accent -mb-px"
-                  : "text-text-secondary hover:text-text-primary"
+                  ? "text-blue-700 bg-blue-50/80 border-b-2 border-blue-600 font-bold -mb-px"
+                  : "text-slate-600 hover:text-slate-900 hover:bg-slate-50"
               )}
             >
-              <Icon size={14} />
+              <Icon size={14} className={isActive ? "text-blue-600" : "text-slate-500"} />
               {label}
               {id === "violations" && violationCount > 0 && (
-                <span className="ml-0.5 bg-danger text-white text-2xs font-semibold rounded-sm px-1 py-0.5 leading-none">
+                <span className="ml-1.5 bg-rose-600 text-white text-[10px] font-bold rounded-full px-1.5 py-0.5 leading-none">
                   {violationCount}
                 </span>
               )}
