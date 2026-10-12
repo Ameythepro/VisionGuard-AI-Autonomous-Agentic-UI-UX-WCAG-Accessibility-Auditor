@@ -45,5 +45,5 @@ COPY . .
 # Expose the FastAPI port
 EXPOSE 8000
 
-# Run the API server
-CMD ["uvicorn", "api_backend.main_api:app", "--host", "0.0.0.0", "--port", "8000"]
+# Run the API server (respects cloud-provided $PORT if set)
+CMD ["sh", "-c", "uvicorn api_backend.main_api:app --host 0.0.0.0 --port ${PORT:-8000}"]
