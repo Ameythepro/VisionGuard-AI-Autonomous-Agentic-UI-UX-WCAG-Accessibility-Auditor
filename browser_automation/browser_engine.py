@@ -45,6 +45,7 @@ class AuditCapture:
     captures: Dict[str, PageCapture] = field(default_factory=dict)
     errors: Dict[str, str] = field(default_factory=dict)
     duration_seconds: float = 0.0
+    computed_styles: List[dict] = field(default_factory=list)
 
 class BrowserEngine:
     """
@@ -60,9 +61,19 @@ class BrowserEngine:
     """
     
     # Maximum time in ms to wait for a page to load
-    DEFAULT_NAVIGATION_TIMEOUT = 60_000
+    DEFAULT_NAVIGATION_TIMEOUT = 30_000
     # Time in ms to wait after network idle for JS animations
-    POST_LOAD_SETTLE_TIME = 3000
+    POST_LOAD_SETTLE_TIME = 1000
+
+    CHROMIUM_ARGS = [
+        "--no-sandbox",
+        "--disable-setuid-sandbox",
+        "--disable-dev-shm-usage",
+        "--disable-gpu",
+        "--font-render-hinting=none",
+        "--disable-background-timer-throttling",
+        "--disable-renderer-backgrounding",
+    ]
 
     def __init__(self, headless: bool = True, timeout: int = DEFAULT_NAVIGATION_TIMEOUT):
         self.headless = headless
@@ -101,15 +112,23 @@ class BrowserEngine:
         logger.info(f"Viewports: {list(viewports.keys())}")
         
         async with async_playwright() as pw:
-            browser = await pw.chromium.launch(headless=self.headless)
+            browser = await pw.chromium.launch(
+                headless=self.headless,
+                args=self.CHROMIUM_ARGS,
+            )
             
             try:
                 for vp_name, vp_config in viewports.items():
                     try:
-                        capture = await self._capture_single_viewport(
-                            browser, url, vp_name, vp_config, output_dir, cookies, storage_state
+                        # Extract computed styles on desktop viewport (or first viewport)
+                        need_styles = (vp_name == "desktop_1080p" or not audit.computed_styles)
+                        capture, styles = await self._capture_single_viewport(
+                            browser, url, vp_name, vp_config, output_dir, cookies, storage_state,
+                            extract_styles=need_styles,
                         )
                         audit.captures[vp_name] = capture
+                        if styles and not audit.computed_styles:
+                            audit.computed_styles = styles
                         logger.info(f"    {vp_name} ({vp_config.width}x{vp_config.height}) captured")
                     except Exception as e:
                         error_msg = f"{type(e).__name__}: {e}"
@@ -135,9 +154,11 @@ class BrowserEngine:
         output_dir: str,
         cookies: Optional[List[dict]] = None,
         storage_state: Optional[Union[dict, str]] = None,
-    ) -> PageCapture:
+        extract_styles: bool = False,
+    ) -> tuple[PageCapture, List[dict]]:
         """
         Captures a single viewport: navigates, waits, screenshots, extracts DOM.
+        Optionally extracts computed CSS styles in the same pass.
         Each viewport gets its own isolated BrowserContext for clean state.
         """
         context_options = ViewportManager.to_playwright_context_options(viewport_config)
@@ -153,29 +174,56 @@ class BrowserEngine:
             await context.add_cookies(cookies)
             
         page: Page = await context.new_page()
+        extracted_styles: List[dict] = []
         
         try:
             # Set navigation timeout
             page.set_default_navigation_timeout(self.timeout)
             
-            # Navigate and wait for network to go idle
+            # Navigate and wait for DOMContentLoaded (fast & reliable)
             await page.goto(url, wait_until="domcontentloaded")
             
-            # Allow JS animations / lazy-loaded content to settle
+            # Allow JS animations / lazy-loaded content to settle briefly
             await page.wait_for_timeout(self.POST_LOAD_SETTLE_TIME)
             
-            # --- Screenshot ---
+            # --- Screenshot with resilient timeout & fallback ---
             filename = f"{viewport_name}_{viewport_config.width}x{viewport_config.height}.png"
             filepath = os.path.join(output_dir, filename)
-            await page.screenshot(path=filepath, full_page=True)
+            try:
+                # 5s bounded timeout; animations disabled to prevent font-loading stalls
+                await page.screenshot(
+                    path=filepath,
+                    full_page=True,
+                    timeout=5000,
+                    animations="disabled",
+                )
+            except Exception as e_full:
+                logger.warning(
+                    f"[{viewport_name}] Full-page screenshot timeout/error ({e_full}), "
+                    "falling back to viewport capture..."
+                )
+                try:
+                    await page.screenshot(
+                        path=filepath,
+                        full_page=False,
+                        timeout=3000,
+                        animations="disabled",
+                    )
+                except Exception as e_view:
+                    logger.error(f"[{viewport_name}] Viewport screenshot also timed out: {e_view}")
+                    filepath = ""
             
             # --- Extract rendered HTML (full DOM after JS execution) ---
             html_source = await page.content()
             
             # --- Page metadata ---
             page_title = await page.title()
+
+            # --- Optional computed style extraction in the same pass ---
+            if extract_styles:
+                extracted_styles = await self._extract_styles_from_page(page)
             
-            return PageCapture(
+            capture = PageCapture(
                 viewport_name=viewport_name,
                 viewport_width=viewport_config.width,
                 viewport_height=viewport_config.height,
@@ -184,8 +232,56 @@ class BrowserEngine:
                 page_title=page_title,
                 page_url=url,
             )
+            return capture, extracted_styles
         finally:
             await context.close()
+
+    @staticmethod
+    async def _extract_styles_from_page(page: Page) -> List[dict]:
+        """Extract computed styles of visible text elements from an open page."""
+        try:
+            styles = await page.evaluate("""
+                () => {
+                    const elements = document.querySelectorAll(
+                        'p, span, a, h1, h2, h3, h4, h5, h6, li, td, th, ' +
+                        'label, button, input, textarea, select, figcaption, ' +
+                        'blockquote, cite, code, pre, strong, em, small, div'
+                    );
+                    const results = [];
+                    for (const el of elements) {
+                        const text = el.innerText?.trim();
+                        if (!text || text.length === 0) continue;
+                        const computed = window.getComputedStyle(el);
+                        const rect = el.getBoundingClientRect();
+                        if (rect.width === 0 || rect.height === 0) continue;
+                        if (computed.display === 'none' || computed.visibility === 'hidden') continue;
+                        results.push({
+                            tag: el.tagName.toLowerCase(),
+                            text: text.substring(0, 200),
+                            color: computed.color,
+                            backgroundColor: computed.backgroundColor,
+                            fontSize: computed.fontSize,
+                            fontWeight: computed.fontWeight,
+                            boundingBox: {
+                                x: Math.round(rect.x),
+                                y: Math.round(rect.y),
+                                width: Math.round(rect.width),
+                                height: Math.round(rect.height)
+                            },
+                            selector: el.id 
+                                ? '#' + el.id 
+                                : el.className 
+                                    ? el.tagName.toLowerCase() + '.' + el.className.split(' ').join('.') 
+                                    : el.tagName.toLowerCase()
+                        });
+                    }
+                    return results;
+                }
+            """)
+            return styles or []
+        except Exception as e:
+            logger.warning(f"In-page style extraction failed: {e}")
+            return []
 
     async def extract_computed_styles(
         self, 
@@ -198,7 +294,10 @@ class BrowserEngine:
         CSS styles of all visible text elements.
         """
         async with async_playwright() as pw:
-            browser = await pw.chromium.launch(headless=self.headless)
+            browser = await pw.chromium.launch(
+                headless=self.headless,
+                args=self.CHROMIUM_ARGS,
+            )
             
             context_options = {"viewport": {"width": 1920, "height": 1080}}
             if storage_state:

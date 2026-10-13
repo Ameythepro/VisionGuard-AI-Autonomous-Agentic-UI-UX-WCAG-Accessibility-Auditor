@@ -199,8 +199,10 @@ async def audit_url(request: AuditRequest):
         # Step 1: Capture screenshots + DOM across all viewports
         audit_capture: AuditCapture = await browser_engine.capture_page(url, output_dir)
         
-        # Step 2: Extract computed CSS styles for WCAG analysis
-        computed_styles = await browser_engine.extract_computed_styles(url)
+        # Step 2: Extract computed CSS styles for WCAG analysis (use in-memory styles from Step 1)
+        computed_styles = audit_capture.computed_styles
+        if not computed_styles:
+            computed_styles = await browser_engine.extract_computed_styles(url)
         
         # ── Step 3: Role 3 — Run WCAG math on computed styles ──
         wcag_result = audit_computed_styles(computed_styles, url=url)
