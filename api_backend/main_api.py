@@ -83,8 +83,14 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-os.makedirs("temp_screenshots", exist_ok=True)
-app.mount("/temp_screenshots", StaticFiles(directory="temp_screenshots"), name="temp_screenshots")
+
+# ── Screenshot directory (absolute path, works on any cloud host) ──────────
+_API_DIR = os.path.dirname(os.path.abspath(__file__))
+_PROJECT_ROOT = os.path.dirname(_API_DIR)
+SCREENSHOTS_DIR = os.path.join(_PROJECT_ROOT, "temp_screenshots")
+os.makedirs(SCREENSHOTS_DIR, exist_ok=True)
+app.mount("/temp_screenshots", StaticFiles(directory=SCREENSHOTS_DIR), name="temp_screenshots")
+
 
 # Shared service instances
 browser_engine = BrowserEngine(headless=True)
@@ -192,7 +198,7 @@ async def audit_url(request: AuditRequest):
     # --- Run the browser engine ---
     try:
         output_dir = os.path.join(
-            "temp_screenshots",
+            SCREENSHOTS_DIR,
             f"audit_{audit_id}_{int(time.time())}"
         )
         
@@ -237,8 +243,17 @@ async def audit_url(request: AuditRequest):
             "viewports_captured": list(audit_capture.captures.keys()),
             "viewports_failed": audit_capture.errors,
             "screenshots": {
-                name: capture.screenshot_path.replace("\\", "/")
+                name: (
+                    # Convert absolute OS path -> URL-relative path so frontend can
+                    # prepend API_BASE.  e.g. /app/temp_screenshots/audit_abc/x.png
+                    #   -> temp_screenshots/audit_abc/x.png
+                    os.path.relpath(capture.screenshot_path, _PROJECT_ROOT)
+                    .replace("\\", "/")
+                    if capture.screenshot_path and os.path.isabs(capture.screenshot_path)
+                    else capture.screenshot_path.replace("\\", "/").lstrip("/")
+                )
                 for name, capture in audit_capture.captures.items()
+                if capture.screenshot_path  # skip viewports that failed to screenshot
             },
             "page_title": next(iter(audit_capture.captures.values())).page_title 
                 if audit_capture.captures else "Unknown",
@@ -392,13 +407,22 @@ async def verify_css_patch(request: PatchRequest):
             url=request.url,
             css_patch=request.css_patch,
             viewport_name=request.viewport,
+            output_dir=os.path.join(SCREENSHOTS_DIR, "sandbox"),
         )
         
+        def _to_url_path(p: str) -> str:
+            """Convert absolute or relative OS path to URL-relative path."""
+            if not p:
+                return ""
+            if os.path.isabs(p):
+                return os.path.relpath(p, _PROJECT_ROOT).replace("\\", "/")
+            return p.replace("\\", "/").lstrip("/")
+
         return {
             "success": sandbox_result.success,
             "error": sandbox_result.error,
-            "original_screenshot": sandbox_result.original_screenshot,
-            "patched_screenshot": sandbox_result.patched_screenshot,
+            "original_screenshot": _to_url_path(sandbox_result.original_screenshot),
+            "patched_screenshot": _to_url_path(sandbox_result.patched_screenshot),
             "viewport": sandbox_result.viewport_name,
         }
     except Exception as e:

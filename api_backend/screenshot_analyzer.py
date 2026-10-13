@@ -29,6 +29,15 @@ load_dotenv()
 
 logger = logging.getLogger("visionguard.screenshot_analyzer")
 
+# Absolute path to the shared screenshots directory so uploads land in
+# the same location served by the FastAPI static mount, regardless of
+# the process working directory (important for Render / cloud deploys).
+_MODULE_DIR = os.path.dirname(os.path.abspath(__file__))
+_PROJECT_ROOT = os.path.dirname(_MODULE_DIR)
+SCREENSHOTS_DIR = os.path.join(_PROJECT_ROOT, "temp_screenshots")
+os.makedirs(SCREENSHOTS_DIR, exist_ok=True)
+
+
 # ── Conditional imports ──────────────────────────────────────
 _GENAI_AVAILABLE = False
 try:
@@ -233,8 +242,9 @@ class ScreenshotAnalyzer:
 
         logger.info("[%s] Analyzing uploaded screenshot: %s", analysis_id, filename)
 
-        # Save the uploaded screenshot
-        upload_dir = os.path.join("temp_screenshots", f"upload_{analysis_id}")
+        # Save the uploaded screenshot (use absolute SCREENSHOTS_DIR so the
+        # static file mount always finds it regardless of process CWD).
+        upload_dir = os.path.join(SCREENSHOTS_DIR, f"upload_{analysis_id}")
         os.makedirs(upload_dir, exist_ok=True)
 
         ext = os.path.splitext(filename)[1] or ".png"
@@ -242,10 +252,17 @@ class ScreenshotAnalyzer:
         with open(original_path, "wb") as f:
             f.write(image_bytes)
 
+        # Convert to a URL-relative path: /app/temp_screenshots/... -> temp_screenshots/...
+        url_relative_path = (
+            os.path.relpath(original_path, _PROJECT_ROOT).replace("\\", "/")
+            if os.path.isabs(original_path)
+            else original_path.replace("\\", "/").lstrip("/")
+        )
+
         analysis = ScreenshotAnalysis(
             analysis_id=analysis_id,
             timestamp=timestamp,
-            original_screenshot_path=original_path.replace("\\", "/"),
+            original_screenshot_path=url_relative_path,
         )
 
         if not self._ai_available or not _PIL_AVAILABLE:

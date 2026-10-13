@@ -113,8 +113,8 @@ class SandboxInjector:
                 logger.info(f"Sandbox: before/after captured successfully")
                 
                 return SandboxResult(
-                    original_screenshot=before_path,
-                    patched_screenshot=after_path,
+                    original_screenshot=before_path.replace("\\", "/").lstrip("/"),
+                    patched_screenshot=after_path.replace("\\", "/").lstrip("/"),
                     css_patch=css_patch,
                     viewport_name=viewport_name,
                     success=True,
@@ -125,8 +125,8 @@ class SandboxInjector:
                 error_msg = f"{type(e).__name__}: {e}"
                 logger.error(f"Sandbox injection failed: {error_msg}")
                 return SandboxResult(
-                    original_screenshot=before_path,
-                    patched_screenshot=after_path,
+                    original_screenshot=before_path.replace("\\", "/").lstrip("/"),
+                    patched_screenshot=after_path.replace("\\", "/").lstrip("/"),
                     css_patch=css_patch,
                     viewport_name=viewport_name,
                     success=False,
