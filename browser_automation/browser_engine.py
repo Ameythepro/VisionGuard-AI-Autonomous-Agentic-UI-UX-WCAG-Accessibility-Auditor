@@ -186,32 +186,32 @@ class BrowserEngine:
             # Allow JS animations / lazy-loaded content to settle briefly
             await page.wait_for_timeout(self.POST_LOAD_SETTLE_TIME)
             
-            # --- Screenshot with resilient timeout & fallback ---
+            # --- Screenshot with resilient capture strategy ---
             filename = f"{viewport_name}_{viewport_config.width}x{viewport_config.height}.png"
             filepath = os.path.join(output_dir, filename)
             try:
-                # 5s bounded timeout; animations disabled to prevent font-loading stalls
+                # 1. Capture viewport first (fast, reliable, doesn't stall on huge DOMs/infinite scroll)
                 await page.screenshot(
                     path=filepath,
-                    full_page=True,
-                    timeout=5000,
+                    full_page=False,
+                    timeout=8000,
                     animations="disabled",
                 )
-            except Exception as e_full:
-                logger.warning(
-                    f"[{viewport_name}] Full-page screenshot timeout/error ({e_full}), "
-                    "falling back to viewport capture..."
-                )
+                # 2. Try upgrading to full_page; if it times out, we keep the valid viewport screenshot
                 try:
                     await page.screenshot(
                         path=filepath,
-                        full_page=False,
-                        timeout=3000,
+                        full_page=True,
+                        timeout=8000,
                         animations="disabled",
                     )
-                except Exception as e_view:
-                    logger.error(f"[{viewport_name}] Viewport screenshot also timed out: {e_view}")
-                    filepath = ""
+                except Exception as e_full:
+                    logger.info(
+                        f"[{viewport_name}] Full-page capture skipped/timed out ({e_full}); keeping viewport screenshot."
+                    )
+            except Exception as e_view:
+                logger.error(f"[{viewport_name}] Screenshot capture failed: {e_view}")
+                filepath = ""
             
             # --- Extract rendered HTML (full DOM after JS execution) ---
             html_source = await page.content()

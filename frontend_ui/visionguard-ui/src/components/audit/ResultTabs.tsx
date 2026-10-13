@@ -59,18 +59,22 @@ function ScreenshotsTab({
                   {name.replace(/_/g, " ")}
                 </p>
                 <div className="bg-bg-subtle border border-border rounded-lg h-40 flex items-center justify-center overflow-hidden relative">
-                  <img
-                    src={`${API_BASE}/${path}`}
-                    alt={`${name} screenshot`}
-                    className="w-full h-full object-cover object-top"
-                    onError={(e) => {
-                      e.currentTarget.style.display = 'none';
-                      e.currentTarget.nextElementSibling?.classList.remove('hidden');
-                    }}
-                  />
-                  <div className="text-center space-y-1 px-4 hidden absolute inset-0 flex flex-col items-center justify-center bg-bg-subtle">
+                  {path ? (
+                    <img
+                      src={`${API_BASE}/${path.replace(/^\/+/, '')}`}
+                      alt={`${name} screenshot`}
+                      className="w-full h-full object-cover object-top"
+                      onError={(e) => {
+                        e.currentTarget.style.display = 'none';
+                        e.currentTarget.nextElementSibling?.classList.remove('hidden');
+                      }}
+                    />
+                  ) : null}
+                  <div className={cn("text-center space-y-1 px-4 absolute inset-0 flex flex-col items-center justify-center bg-bg-subtle", path ? "hidden" : "")}>
                     <Image size={20} className="text-text-tertiary mx-auto" />
-                    <p className="text-xs text-text-tertiary font-mono break-all">{path}</p>
+                    <p className="text-xs text-text-tertiary">
+                      {path ? "Screenshot load error" : "Capture timed out on heavy site"}
+                    </p>
                   </div>
                 </div>
               </div>
