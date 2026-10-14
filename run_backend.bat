@@ -1,4 +1,5 @@
 @echo off
+set "PATH=C:\Windows\System32;%PATH%"
 title VisionGuard AI - Backend Server (:8001)
 echo ===================================================
 echo Starting VisionGuard AI FastAPI Backend on port 8001...
