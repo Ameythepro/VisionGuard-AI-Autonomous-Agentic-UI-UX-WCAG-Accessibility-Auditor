@@ -314,6 +314,15 @@ export default function ScreenshotLabPage() {
                 </div>
               </div>
               
+              {analysisResult.error && (
+                <div className="p-3.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs flex items-start gap-2.5">
+                  <AlertTriangle size={16} className="text-amber-600 shrink-0 mt-0.5" />
+                  <div>
+                    <span className="font-bold">API Warning:</span> {analysisResult.error}
+                  </div>
+                </div>
+              )}
+
               <p className="text-sm text-slate-700 leading-relaxed">{analysisResult.summary}</p>
 
               {analysisResult.violations && analysisResult.violations.length > 0 && (
@@ -391,6 +400,14 @@ export default function ScreenshotLabPage() {
 
             {fixResult ? (
               <div className="space-y-4 animate-fade-in">
+                {fixResult.warning && (
+                  <div className="p-3.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs flex items-start gap-2.5">
+                    <AlertTriangle size={16} className="text-amber-600 shrink-0 mt-0.5" />
+                    <div>
+                      <span className="font-bold">API Warning:</span> {fixResult.warning}
+                    </div>
+                  </div>
+                )}
                 {fixResult.fixed_screenshot_path && (
                   <div className="space-y-2">
                     <p className="text-xs font-semibold text-slate-700">Patched Visual Preview (Rendered)</p>

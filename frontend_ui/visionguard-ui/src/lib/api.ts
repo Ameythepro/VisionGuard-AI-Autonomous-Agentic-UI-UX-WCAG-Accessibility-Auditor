@@ -1,4 +1,9 @@
-export const API_BASE = import.meta.env.VITE_API_URL ?? "http://localhost:8001";
+const isBrowser = typeof window !== "undefined";
+const isLocalhost = isBrowser && (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1");
+
+export const API_BASE = 
+  import.meta.env.VITE_API_URL || 
+  (isLocalhost ? "http://localhost:8001" : "https://visionguard-ai-zmtz.onrender.com");
 
 async function request<T>(
   path: string,

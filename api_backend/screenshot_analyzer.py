@@ -188,7 +188,7 @@ class ScreenshotAnalyzer:
     - Interactive chat for accessibility suggestions
     """
 
-    DEFAULT_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.5-flash")
+    DEFAULT_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.5-flash-lite")
 
     def __init__(self, api_key: Optional[str] = None, model_name: str = DEFAULT_MODEL):
         self.model_name = model_name
@@ -215,6 +215,41 @@ class ScreenshotAnalyzer:
     @property
     def is_available(self) -> bool:
         return self._ai_available
+
+    async def _call_gemini_with_fallback(self, contents: list) -> any:
+        """Call Gemini model with automatic fallback if primary model gets 503 or 429."""
+        models_to_try = [
+            self.model_name,
+            "gemini-3.5-flash-lite",
+            "gemini-flash-lite-latest",
+            "gemini-3.1-flash-lite",
+            "gemini-flash-latest",
+            "gemini-3.5-flash",
+        ]
+        seen = set()
+        unique_models = []
+        for m in models_to_try:
+            if m and m not in seen:
+                seen.add(m)
+                unique_models.append(m)
+
+        last_exc = None
+        for m_name in unique_models:
+            try:
+                model = genai.GenerativeModel(m_name)
+                response = await asyncio.to_thread(
+                    model.generate_content,
+                    contents=contents,
+                    request_options={"retry": None}
+                )
+                if response and response.text:
+                    logger.info("Gemini call succeeded with model: %s", m_name)
+                    return response
+            except Exception as e:
+                last_exc = e
+                logger.warning("Gemini model %s failed (%s: %s); trying fallback...", m_name, type(e).__name__, e)
+                continue
+        raise last_exc or RuntimeError("All Gemini models failed")
 
     # ─────────────────────────────────────────────────────────
     # Core Analysis
@@ -279,11 +314,7 @@ class ScreenshotAnalyzer:
             if user_prompt:
                 prompt += f"\n\nAdditional context from the user: {user_prompt}"
 
-            response = await asyncio.to_thread(
-                self._model.generate_content,
-                contents=[prompt, image],
-                request_options={"retry": None}
-            )
+            response = await self._call_gemini_with_fallback([prompt, image])
 
             parsed = self._parse_json_response(response.text)
             
@@ -307,6 +338,7 @@ class ScreenshotAnalyzer:
             analysis.error = str(exc)
             analysis = self._generate_mock_analysis(analysis)
 
+        analysis._original_abs_path = original_path
         self._analyses[analysis_id] = analysis
         return analysis
 
@@ -339,7 +371,21 @@ class ScreenshotAnalyzer:
             return {"html": html, "fixed_screenshot_path": fixed_path}
 
         try:
-            image = Image.open(analysis.original_screenshot_path)
+            abs_img_path = getattr(analysis, "_original_abs_path", None)
+            if not abs_img_path or not os.path.exists(abs_img_path):
+                upload_dir = os.path.join(SCREENSHOTS_DIR, f"upload_{analysis_id}")
+                if os.path.exists(upload_dir):
+                    for fname in os.listdir(upload_dir):
+                        if fname.startswith("original"):
+                            abs_img_path = os.path.join(upload_dir, fname)
+                            break
+            
+            if abs_img_path and os.path.exists(abs_img_path):
+                image = Image.open(abs_img_path)
+            elif os.path.exists(analysis.original_screenshot_path):
+                image = Image.open(analysis.original_screenshot_path)
+            else:
+                image = Image.open(os.path.join(_PROJECT_ROOT, analysis.original_screenshot_path))
 
             violations_json = json.dumps(analysis.violations[:20], indent=2)
             
@@ -352,11 +398,7 @@ class ScreenshotAnalyzer:
                 user_prompt=user_section,
             )
 
-            response = await asyncio.to_thread(
-                self._model.generate_content,
-                contents=[prompt, image],
-                request_options={"retry": None}
-            )
+            response = await self._call_gemini_with_fallback([prompt, image])
 
             html = self._extract_html_from_response(response.text)
 
@@ -402,10 +444,7 @@ class ScreenshotAnalyzer:
                 user_prompt=user_prompt,
             )
 
-            response = await asyncio.to_thread(
-                self._model.generate_content,
-                prompt,
-            )
+            response = await self._call_gemini_with_fallback([prompt])
 
             html = self._extract_html_from_response(response.text)
             if html:
@@ -477,11 +516,7 @@ class ScreenshotAnalyzer:
                         history_text += f"**{msg.role}**: {msg.content[:200]}\n"
                     prompt += history_text
 
-                result = await asyncio.to_thread(
-                    self._model.generate_content,
-                    contents=prompt,
-                    request_options={"retry": None}
-                )
+                result = await self._call_gemini_with_fallback([prompt])
                 response = result.text or "I couldn't generate a response. Please try again."
 
             except Exception as exc:
@@ -513,14 +548,10 @@ class ScreenshotAnalyzer:
     async def _render_html_to_screenshot(self, html: str, analysis_id: str) -> str:
         """Render HTML to a screenshot using Playwright."""
         try:
-            from browser_automation.browser_engine import BrowserEngine
-            
-            output_dir = os.path.join("temp_screenshots", f"upload_{analysis_id}")
+            output_dir = os.path.join(SCREENSHOTS_DIR, f"upload_{analysis_id}")
             os.makedirs(output_dir, exist_ok=True)
             fixed_path = os.path.join(output_dir, "fixed_render.png")
 
-            engine = BrowserEngine(headless=True)
-            
             # Write HTML to a temp file
             html_path = os.path.join(output_dir, "fixed.html")
             with open(html_path, "w", encoding="utf-8") as f:
@@ -538,7 +569,14 @@ class ScreenshotAnalyzer:
                 await browser.close()
 
             logger.info("[%s] Rendered fixed screenshot: %s", analysis_id, fixed_path)
-            return fixed_path.replace("\\", "/")
+            
+            # Return URL-relative path so the frontend can load it from static mount
+            url_relative_path = (
+                os.path.relpath(fixed_path, _PROJECT_ROOT).replace("\\", "/")
+                if os.path.isabs(fixed_path)
+                else fixed_path.replace("\\", "/").lstrip("/")
+            )
+            return url_relative_path
 
         except Exception as exc:
             logger.error("Failed to render HTML screenshot: %s", exc)

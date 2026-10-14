@@ -361,7 +361,7 @@ class VisionGuardAgent:
         print(report["wcag_summary"])
     """
 
-    DEFAULT_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.5-flash")
+    DEFAULT_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.5-flash-lite")
 
     def __init__(
         self,
@@ -375,7 +375,7 @@ class VisionGuardAgent:
         Args:
             api_key:     Google Gemini API key.  Falls back to the
                          ``GOOGLE_API_KEY`` environment variable.
-            model_name:  Gemini model identifier (default: gemini-1.5-flash).
+            model_name:  Gemini model identifier (default: gemini-3.5-flash-lite).
             headless:    Run the Playwright browser in headless mode.
         """
         self.model_name = model_name
@@ -417,6 +417,42 @@ class VisionGuardAgent:
             "VisionGuardAgent ready | mode=%s",
             "ai_enhanced" if self._ai_available else "deterministic",
         )
+
+    async def _call_gemini_with_fallback(self, contents: any) -> any:
+        """Call Gemini model with automatic fallback if primary model gets 503 or 429."""
+        models_to_try = [
+            self.model_name,
+            "gemini-3.5-flash-lite",
+            "gemini-flash-lite-latest",
+            "gemini-3.1-flash-lite",
+            "gemini-flash-latest",
+            "gemini-3.5-flash",
+        ]
+        seen = set()
+        unique_models = []
+        for m in models_to_try:
+            if m and m not in seen:
+                seen.add(m)
+                unique_models.append(m)
+
+        last_exc = None
+        contents_list = contents if isinstance(contents, list) else [contents]
+        for m_name in unique_models:
+            try:
+                model = genai.GenerativeModel(m_name)
+                response = await asyncio.to_thread(
+                    model.generate_content,
+                    contents=contents_list,
+                    request_options={"retry": None}
+                )
+                if response and response.text:
+                    logger.info("Agent Gemini call succeeded with model: %s", m_name)
+                    return response
+            except Exception as e:
+                last_exc = e
+                logger.warning("Agent Gemini model %s failed (%s: %s); trying fallback...", m_name, type(e).__name__, e)
+                continue
+        raise last_exc or RuntimeError("All Gemini models failed")
 
     # ─────────────────────────────────────────────────────────
     # Properties
@@ -660,12 +696,8 @@ class VisionGuardAgent:
 
             full_prompt = SYSTEM_UIUX_REVIEWER + "\n\n" + human_msg
 
-            # Run the (blocking) Gemini call in a thread
-            response = await asyncio.to_thread(
-                self._model.generate_content,
-                contents=[full_prompt, image],
-                request_options={"retry": None}
-            )
+            # Call Gemini with automatic fallback to lite models
+            response = await self._call_gemini_with_fallback([full_prompt, image])
 
             return self._parse_llm_json(response.text)
 
@@ -695,11 +727,7 @@ class VisionGuardAgent:
 
             full_prompt = SYSTEM_ACCESSIBILITY_FIXER + "\n\n" + human_msg
 
-            response = await asyncio.to_thread(
-                self._model.generate_content,
-                contents=full_prompt,
-                request_options={"retry": None}
-            )
+            response = await self._call_gemini_with_fallback(full_prompt)
 
             result = self._parse_llm_json(response.text)
 
@@ -895,10 +923,7 @@ class VisionGuardAgent:
 
             full_prompt = SYSTEM_ACCESSIBILITY_FIXER + "\n\n" + prompt
 
-            response = await asyncio.to_thread(
-                self._model.generate_content,
-                full_prompt,
-            )
+            response = await self._call_gemini_with_fallback(full_prompt)
 
             result = self._parse_llm_json(response.text)
 

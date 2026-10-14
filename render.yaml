@@ -9,6 +9,6 @@ services:
       - key: PLAYWRIGHT_HEADLESS
         value: "true"
       - key: GEMINI_MODEL
-        value: "gemini-3.5-flash"
+        value: "gemini-3.5-flash-lite"
       - key: GOOGLE_API_KEY
         sync: false
